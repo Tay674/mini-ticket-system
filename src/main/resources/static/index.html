@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini Ticket System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans">
+
+    <!-- LOGIN BEREICH -->
+    <div id="login-view" class="flex items-center justify-center min-h-screen">
+        <div class="bg-white p-8 rounded-lg shadow-md w-96">
+            <h2 class="text-2xl font-bold mb-6 text-center text-gray-800">Login</h2>
+            <input type="text" id="username" placeholder="Username" class="w-full mb-4 px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <input type="password" id="password" placeholder="Passwort" class="w-full mb-6 px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button onclick="login()" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition">Einloggen</button>
+            <p id="login-error" class="text-red-500 text-sm mt-4 text-center hidden">Login fehlgeschlagen!</p>
+        </div>
+    </div>
+
+    <!-- HAUPTANWENDUNG (Versteckt bis eingeloggt) -->
+    <div id="app-view" class="hidden container mx-auto p-6 max-w-6xl">
+        
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-8 bg-white p-4 rounded-lg shadow-sm">
+            <h1 class="text-2xl font-bold text-gray-800">Ticket System</h1>
+            <div>
+                <button id="new-board-btn" onclick="toggleBoardForm()" class="hidden bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition mr-2">+ Neues Board</button>
+                <button onclick="logout()" class="text-red-500 hover:text-red-700 font-semibold">Logout</button>
+            </div>
+        </div>
+
+        <!-- Board erstellen Formular (Versteckt) -->
+        <div id="board-form" class="hidden bg-white p-6 rounded-lg shadow-md mb-6 border-l-4 border-blue-500">
+            <h2 class="text-xl font-bold mb-4 text-gray-800">Neues Board anlegen</h2>
+            <input type="text" id="newBoardName" placeholder="Board-Name (z.B. IT-Support)" class="w-full mb-3 px-3 py-2 border rounded-md">
+            <textarea id="newBoardDesc" placeholder="Beschreibung (optional)" class="w-full mb-4 px-3 py-2 border rounded-md" rows="2"></textarea>
+            <button onclick="createBoard()" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition">Board speichern</button>
+            <button onclick="toggleBoardForm()" class="text-gray-500 hover:text-gray-700 ml-2">Abbrechen</button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- LINKE SPALTE: Formulare & Admin-Bereich -->
+            <div class="space-y-6">
+                <!-- Ticket Erstellen -->
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-xl font-bold mb-4 text-gray-800">Neues Ticket</h2>
+                    
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Kategorie (Board)</label>
+                    <select id="projectId" class="w-full mb-4 px-3 py-2 border rounded-md bg-white text-sm">
+                        <option value="">-- Bitte wählen --</option>
+                    </select>
+
+                    <input type="text" id="ticketTitle" placeholder="Titel" class="w-full mb-3 px-3 py-2 border rounded-md">
+                    <textarea id="ticketDesc" placeholder="Beschreibung" class="w-full mb-3 px-3 py-2 border rounded-md" rows="3"></textarea>
+                    
+					
+                    <button onclick="createTicket()" class="w-full bg-green-600 text-white py-2 rounded-md hover:bg-green-700 transition">Ticket anlegen</button>
+                </div>
+
+                <!-- Admin: Board Verwaltung -->
+                <div id="admin-board-manager" class="hidden bg-white p-6 rounded-lg shadow-md border-l-4 border-red-500">
+                    <h2 class="text-xl font-bold mb-4 text-red-600">Boards verwalten</h2>
+                    <div id="admin-board-list" class="space-y-2">
+                        <!-- Wird per JS gefüllt -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- RECHTE SPALTE: Ticket Liste -->
+            <div class="bg-white p-6 rounded-lg shadow-md lg:col-span-2">
+                <div class="flex border-b mb-4">
+                    <button onclick="switchTab('my')" id="tab-my" class="px-4 py-2 font-bold text-blue-600 border-b-2 border-blue-600">Meine Tickets</button>
+                    <button onclick="switchTab('incoming')" id="tab-incoming" class="px-4 py-2 font-bold text-gray-500 hover:text-gray-700 hidden">Eingehende Anfragen (Admin)</button>
+                </div>
+                <div id="ticket-list" class="space-y-3">
+                    <p class="text-gray-500 text-sm">Lade Tickets...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allUsers = []; 
+        let allBoards = [];
+        let currentTab = 'my'; 
+
+        window.onload = () => {
+            const token = localStorage.getItem('jwt');
+            if (token) {
+                showApp();
+            }
+        };
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorMsg = document.getElementById('login-error');
+
+            try {
+                const response = await fetch('/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    localStorage.setItem('jwt', data.token);
+                    localStorage.setItem('role', data.role);
+                    localStorage.setItem('username', data.username);
+                    window.location.reload(); 
+                } else {
+                    errorMsg.classList.remove('hidden');
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Server nicht erreichbar");
+            }
+        }
+
+        function logout() {
+            localStorage.clear();
+            window.location.reload(); 
+        }
+
+        async function showApp() {
+            document.getElementById('login-view').classList.add('hidden');
+            document.getElementById('app-view').classList.remove('hidden');
+            
+            const isAdmin = localStorage.getItem('role') === 'ADMIN';
+
+            if (isAdmin) {
+                document.getElementById('tab-incoming').classList.remove('hidden');
+                document.getElementById('new-board-btn').classList.remove('hidden');
+                document.getElementById('admin-board-manager').classList.remove('hidden');
+            } else {
+                document.getElementById('tab-incoming').classList.add('hidden');
+                document.getElementById('new-board-btn').classList.add('hidden');
+                document.getElementById('admin-board-manager').classList.add('hidden');
+            }
+
+            await loadUsers(); 
+            await loadBoards();
+            loadTickets();
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            const btnMy = document.getElementById('tab-my');
+            const btnIncoming = document.getElementById('tab-incoming');
+            const isAdmin = localStorage.getItem('role') === 'ADMIN';
+            
+            if (tab === 'my') {
+                btnMy.className = "px-4 py-2 font-bold text-blue-600 border-b-2 border-blue-600";
+                btnIncoming.className = "px-4 py-2 font-bold text-gray-500 hover:text-gray-700" + (isAdmin ? "" : " hidden");
+            } else {
+                btnMy.className = "px-4 py-2 font-bold text-gray-500 hover:text-gray-700";
+                btnIncoming.className = "px-4 py-2 font-bold text-blue-600 border-b-2 border-blue-600";
+            }
+            loadTickets();
+        }
+
+        async function loadUsers() {
+            const token = localStorage.getItem('jwt');
+            try {
+                const response = await fetch('/api/v1/users', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (response.ok) allUsers = await response.json();
+            } catch (e) {
+                console.error("Fehler beim Laden der User", e);
+            }
+        }
+
+        function toggleBoardForm() {
+            document.getElementById('board-form').classList.toggle('hidden');
+        }
+
+        async function createBoard() {
+            const token = localStorage.getItem('jwt');
+            const name = document.getElementById('newBoardName').value;
+            const description = document.getElementById('newBoardDesc').value;
+
+            if (!name) return alert("Bitte einen Board-Namen eingeben.");
+
+            const response = await fetch('/api/v1/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ name, description })
+            });
+
+            if (response.ok) {
+                document.getElementById('newBoardName').value = '';
+                document.getElementById('newBoardDesc').value = '';
+                toggleBoardForm();
+                loadBoards();
+            } else {
+                alert("Fehler beim Erstellen des Boards.");
+            }
+        }
+
+        async function loadBoards() {
+            const token = localStorage.getItem('jwt');
+            const select = document.getElementById('projectId');
+            select.innerHTML = '<option value="">-- Bitte Kategorie wählen --</option>';
+
+            const response = await fetch('/api/v1/projects', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                allBoards = await response.json();
+                allBoards.forEach(b => {
+                    const option = document.createElement('option');
+                    option.value = b.id;
+                    option.textContent = b.name;
+                    select.appendChild(option);
+                });
+
+                // Admin-Liste rendern
+                if (localStorage.getItem('role') === 'ADMIN') {
+                    const list = document.getElementById('admin-board-list');
+                    list.innerHTML = '';
+                    allBoards.forEach(b => {
+                        list.innerHTML += `
+                            <div class="flex justify-between items-center bg-gray-50 p-2 rounded border">
+                                <span class="text-sm font-medium text-gray-700">${b.name}</span>
+                                <div class="flex gap-2">
+                                    <button onclick="editBoard('${b.id}', '${b.name}')" class="text-xs text-blue-600 hover:underline">Bearbeiten</button>
+                                    <button onclick="deleteBoard('${b.id}')" class="text-xs text-red-600 hover:underline">Löschen</button>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+            }
+        }
+
+        async function deleteBoard(id) {
+            if (!confirm("Möchtest du dieses Board wirklich löschen? Alle zugehörigen Tickets werden gelöscht!")) return;
+            const token = localStorage.getItem('jwt');
+            const response = await fetch(`/api/v1/projects/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+                loadBoards();
+                loadTickets(); // Liste aktualisieren
+            } else {
+                alert("Fehler beim Löschen.");
+            }
+        }
+
+        async function editBoard(id, currentName) {
+            const newName = prompt("Neuer Board-Name:", currentName);
+            if (!newName || newName === currentName) return;
+            const token = localStorage.getItem('jwt');
+            const response = await fetch(`/api/v1/projects/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ name: newName, description: "Aktualisiert" })
+            });
+            if (response.ok) {
+                loadBoards();
+                loadTickets();
+            } else {
+                alert("Fehler beim Bearbeiten.");
+            }
+        }
+
+        async function createTicket() {
+            const token = localStorage.getItem('jwt');
+            const projectId = document.getElementById('projectId').value;
+            const title = document.getElementById('ticketTitle').value;
+            const description = document.getElementById('ticketDesc').value;
+     
+
+            if(!projectId || !title) return alert("Bitte Kategorie und Titel ausfüllen!");
+
+            const response = await fetch('/api/v1/tickets', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ title, description, projectId })
+            });
+
+            if (response.ok) {
+                document.getElementById('ticketTitle').value = '';
+                document.getElementById('ticketDesc').value = '';
+                loadTickets();
+            } else {
+                alert("Fehler beim Erstellen des Tickets.");
+            }
+        }
+
+        async function loadTickets() {
+            const token = localStorage.getItem('jwt');
+            const list = document.getElementById('ticket-list');
+            list.innerHTML = '<p class="text-gray-500 text-sm">Lade...</p>';
+
+            const endpoint = currentTab === 'my' ? '/api/v1/tickets/my' : '/api/v1/tickets/incoming';
+
+            try {
+                const response = await fetch(endpoint, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const tickets = await response.json();
+                    list.innerHTML = '';
+                    
+                    if (tickets.length === 0) {
+                        list.innerHTML = '<p class="text-gray-500 text-sm">Keine Tickets gefunden.</p>';
+                        return;
+                    }
+
+                    const isAdmin = localStorage.getItem('role') === 'ADMIN';
+                    const currentUser = localStorage.getItem('username');
+
+                    // Tickets nach Board (Projekt) gruppieren
+                    const groupedTickets = {};
+                    tickets.forEach(t => {
+                        if (!groupedTickets[t.project]) groupedTickets[t.project] = [];
+                        groupedTickets[t.project].push(t);
+                    });
+
+                    // Iteriere über die Kategorien
+                    for (const [boardName, boardTickets] of Object.entries(groupedTickets)) {
+                        list.innerHTML += `<h3 class="text-lg font-bold text-gray-800 mt-4 mb-2 border-b pb-1">${boardName}</h3>`;
+
+						boardTickets.forEach(t => {
+						    const isDone = t.status === 'DONE';
+						    const cardBg = isDone ? 'bg-gray-100 opacity-75' : 'bg-gray-50';
+						    const titleStyle = isDone ? 'line-through text-gray-500' : 'text-gray-800';
+						    const badgeColor = t.priority === 'HIGH' ? 'bg-red-100 text-red-700' : (t.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700');
+						    
+						    const isMine = (t.assignee === currentUser);
+						    const isUnassigned = (!t.assignee);
+						    const isAssignedToMe = (isMine && !isDone);
+						    const borderStyle = isAssignedToMe ? 'border-purple-400 border-2' : 'border';
+						    
+						    let actionButtons = '';
+
+						    // Die Pull-Logik (Nur Admins sehen Buttons)
+						    if (isAdmin) {
+						        if (t.status === 'OPEN') {
+						            // Jeder Admin kann ein freies Ticket nehmen
+						            actionButtons += `<button onclick="updateTicket('${t.id}', 'IN_PROGRESS')" class="text-xs bg-blue-500 text-white px-3 py-1 rounded ml-2">Ticket nehmen</button> `;
+						        } else if (t.status === 'IN_PROGRESS') {
+						            if (isMine) {
+						                // Wenn ich es habe, kann ich es abgeben oder fertigstellen
+						                actionButtons += `<button onclick="updateTicket('${t.id}', 'DONE')" class="text-xs bg-green-500 text-white px-3 py-1 rounded ml-2">Fertigstellen</button> `;
+						                actionButtons += `<button onclick="updateTicket('${t.id}', 'OPEN')" class="text-xs bg-gray-500 text-white px-3 py-1 rounded ml-2">Abgeben</button> `;
+						            }
+						        }
+						    }
+
+						    // Hier wird die Karte zusammengebaut
+						    list.innerHTML += `
+						        <div class="${borderStyle} p-4 rounded-md ${cardBg} mb-2 shadow-sm relative">
+						            ${isAssignedToMe ? '<span class="absolute -top-3 left-4 bg-purple-600 text-white text-xs font-bold px-2 py-1 rounded shadow">Dir zugewiesen</span>' : ''}
+						            
+						            <div class="flex justify-between items-start mt-2">
+						                <h3 class="font-bold ${titleStyle}">${t.title}</h3>
+						                <span class="px-2 py-1 rounded text-xs font-semibold ${badgeColor}">${t.priority}</span>
+						            </div>
+						            <p class="text-sm text-gray-600 mt-1 mb-3">${t.description || ''}</p>
+						            <p class="text-xs text-gray-400 mb-2">Erstellt von: ${t.reporter}</p>
+						            
+						            <div class="flex justify-between items-center text-sm border-t pt-3 mt-2 flex-wrap gap-2">
+						                <div class="flex items-center gap-2 flex-wrap">
+						                    <span class="font-medium text-gray-700">Status: ${t.status}</span>
+						                    
+						                    <!-- Wer hat das Ticket? -->
+						                    ${t.assignee ? `<span class="text-xs text-blue-600 font-semibold">(In Bearbeitung von: ${t.assignee})</span>` : ''}
+						                    ${t.resolvedBy ? `<span class="text-xs text-gray-500">(Erledigt von: ${t.resolvedBy})</span>` : ''}
+						                    
+						                    ${actionButtons}
+						                </div>
+						            </div>
+						        </div>
+						    `;
+						});
+                    }
+                } else {
+                    list.innerHTML = '<p class="text-red-500 text-sm">Fehler beim Laden der Tickets.</p>';
+                }
+            } catch (e) {
+                console.error(e);
+                list.innerHTML = '<p class="text-red-500 text-sm">Netzwerkfehler.</p>';
+            }
+        }
+
+		async function updateTicket(ticketId, newStatus) {
+		    const token = localStorage.getItem('jwt');
+		    const body = { status: newStatus };
+
+		    try {
+		        const response = await fetch(`/api/v1/tickets/${ticketId}`, {
+		            method: 'PUT',
+		            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+		            body: JSON.stringify(body)
+		        });
+
+		        if (response.ok) {
+		            loadTickets(); 
+		        } else {
+		            const errorData = await response.json();
+		            alert(errorData.error || "Fehler beim Aktualisieren des Tickets.");
+		        }
+		    } catch (e) {
+		        alert("Netzwerkfehler beim Aktualisieren.");
+		    }
+		}
+    </script>
+</body>
+</html>
