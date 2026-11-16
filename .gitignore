@@ -31,3 +31,18 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Database / Docker ###
+data/
+*.mv.db
+*.trace.db
+
+### Logs ###
+*.log
+
+### OS Files ###
+.DS_Store
+Thumbs.db
+
+### Environment Variables ###
+.env
